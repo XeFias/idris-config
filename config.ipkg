@@ -13,15 +13,24 @@ pkgs = containers
      , effects
      , lightyear
      , test
+     , contrib
 
-modules = Config.Parse.Utils
+modules = Config.Common.Parser
+        , Config.Common.Lexer
+
+        , Config.Parse.Utils
         , Config.Parse.Common
         , Config.Error
 
+        , Effect.Config.Common
+
         , Config.INI
         , Config.Properties
-        , Config.JSON
         , Config.YAML
+
+        , Config.JSON
+        , Effect.Config.JSON
+
 
         , Config.Test.JSON
         , Config.Test.YAML

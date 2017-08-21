@@ -7,14 +7,16 @@ module Config.Test.JSON
 
 import Config.JSON
 
-import Lightyear.Testing
-
+%default total
 %access export
 
-jsonTest1 : TestReport
-jsonTest1 = parseTest "JSON Test 1"
-                      parseJSONFile
-                      """{
+
+test : String -> IO ()
+test str = printLn $ isRight (fromString str)
+
+
+jsonTest1 : String
+jsonTest1 = """{
           "firstName": "John",
           "lastName": "Smith",
           "isAlive": true,
@@ -41,10 +43,8 @@ jsonTest1 = parseTest "JSON Test 1"
       }
       """
 
-jsonTest2 : TestReport
-jsonTest2 = parseTest "JSON Test 2"
-                      parseJSONFile
-                      """{
+jsonTest2 : String
+jsonTest2 = """{
         "$schema": "http://json-schema.org/draft-03/schema#",
         "name": "Product",
         "type": "object",
@@ -85,10 +85,8 @@ jsonTest2 = parseTest "JSON Test 2"
     }
     """
 
-jsonTest3 : TestReport
-jsonTest3 = parseTest "JSON Test 3"
-                      parseJSONFile
-                      """{
+jsonTest3 : String
+jsonTest3 = """{
     "firstName": "John",
     "lastName": "Smith",
     "isAlive": true,
@@ -116,6 +114,6 @@ jsonTest3 = parseTest "JSON Test 3"
     """
 
 runTests : IO ()
-runTests = Testing.runTests [jsonTest1, jsonTest2, jsonTest3]
+runTests = for_ [jsonTest1, jsonTest2, jsonTest3] test
 
 -- --------------------------------------------------------------------- [ EOF ]

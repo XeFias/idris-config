@@ -7,20 +7,18 @@
 -- --------------------------------------------------------------------- [ EOH ]
 module Config.JSON
 
+import Text.Lexer
+import Text.Parser
+
+import Config.Common.Lexer
+import Config.Common.Parser
+import Config.Common.File
+
 import public Data.AVL.Dict
-
-import Effects
-import Effect.File
-
-import public Lightyear
-import public Lightyear.Char
-import public Lightyear.Strings
 
 import public Config.Error
 
-import Config.Parse.Utils
-import Config.Parse.Common
-
+%default partial
 %access private
 
 -- ------------------------------------------------------------------- [ Model ]
@@ -47,53 +45,74 @@ Show JsonValue where
       fmtItem (k, v) = show k ++ " : " ++ show v
 
 -- ------------------------------------------------------------------ [ Parser ]
-jsonString : Parser String
-jsonString = quoted '"' <?> "JSON String"
 
-jsonNumber : Parser Double
-jsonNumber = map scientificToFloat parseScientific <?> "JSON Number"
+export
+jsonTokMap : TokenMap Token
+jsonTokMap = map (\x => (reserved x, Reserved)) ["true", "false", "null"]
 
-jsonBool : Parser Bool
-jsonBool  =  (char 't' >! string "rue"  *> pure True)
-         <|> (char 'f' >! string "alse" *> pure False)
-         <?> "JSON Bool"
+jsonString : Rule JsonValue
+jsonString = do
+  str <- quoted
+  pure (JsonString str)
 
-jsonNull : Parser ()
-jsonNull = (char 'n' >! string "ull" >! pure ()) <?> "JSON Null"
+jsonNumber : Rule JsonValue
+jsonNumber = do
+  dbl <- double
+  pure (JsonNumber dbl)
+
+bool : Rule Bool
+bool =  (do reserved "true";  pure True)
+    <|> (do reserved "false"; pure False)
+
+null : Rule ()
+null = do reserved "null"; pure ()
+
+jsonBool : Rule JsonValue
+jsonBool  =  (do reserved "true";  pure $ JsonBool True)
+         <|> (do reserved "false"; pure $ JsonBool False)
+
+jsonNull : Rule JsonValue
+jsonNull = do
+  reserved "null"
+  pure JsonNull
 
 mutual
-  jsonArray : Parser (List JsonValue)
-  jsonArray = brackets (commaSep jsonValue) <?> "JSON Array"
+  jsonArray : Rule (List JsonValue)
+  jsonArray = brackets (commaSep1 jsonValue)
+          <|> (do emptyArray; pure Nil)
 
-  keyValuePair : Parser (String, JsonValue)
+  keyValuePair : Rule (String, JsonValue)
   keyValuePair = do
-      key <- spaces *> jsonString <* spaces
+      key <- quoted
       colon
       value <- jsonValue
       pure (key, value)
-    <?> "JSON KV Pair"
 
-  jsonObject : Parser (Dict String JsonValue)
-  jsonObject = map fromList $ braces (commaSep (keyValuePair)) <?> "JSON Object"
+  jsonObject : Rule (Dict String JsonValue)
+  jsonObject = (do kvs <- braces (commaSep1 keyValuePair)
+                   pure $ fromList kvs)
+           <|> (do emptyMap; pure empty)
 
-  jsonValue' : Parser JsonValue
-  jsonValue' =  (map JsonString jsonString)
-            <|> (map JsonNumber jsonNumber)
-            <|> (map JsonBool   jsonBool)
-            <|> (pure JsonNull <* jsonNull)
-            <|>| map JsonArray  jsonArray
-            <|>| map JsonObject jsonObject
+  jsonValue : Rule JsonValue
+  jsonValue =  jsonString
+           <|> jsonNumber
+           <|> jsonBool
+           <|> jsonNull
+           <|> (do arr <- jsonArray;  pure $ JsonArray arr)
+           <|> (do obj <- jsonObject; pure $ JsonObject obj)
 
-  jsonValue : Parser JsonValue
-  jsonValue = spaces *> jsonValue' <* spaces <?> "JSON Value"
 
 export
-parseJSONFile : Parser JsonValue
-parseJSONFile = (map JsonArray jsonArray)
-            <|> (map JsonObject jsonObject)
-            <?> "JSON Files"
+json : Rule JsonValue
+json = (do arr <- jsonArray;  pure $ JsonArray arr)
+   <|> (do obj <- jsonObject; pure $ JsonObject obj)
 
-
+export
+parseJSON : String -> Rule ty -> Either ConfigError ty
+parseJSON str p =
+  case parse jsonTokMap (Just $ stripWhiteSpace) str p of
+    Left err => Left err
+    Right doc => Right doc
 
 export
 toString : JsonValue -> String
@@ -102,13 +121,16 @@ toString doc = show doc
 export
 fromString : String -> Either ConfigError JsonValue
 fromString str =
-    case parse parseJSONFile str of
-      Left err  => Left (PureParseErr err)
+    case parse jsonTokMap (Just $ stripWhiteSpace) str (assert_total json) of
+      Left err  => Left err
       Right doc => Right doc
 
--- -------------------------------------------------------------------- [ Read ]
 export
-readJSONConfig : String -> Eff (Either ConfigError JsonValue) [FILE ()]
-readJSONConfig = readConfigFile parseJSONFile
+fromFile : String -> IO $ Either ConfigError JsonValue
+fromFile fname = do
+    Right doc <- readConfigFile jsonTokMap (Just $ stripWhiteSpace) (assert_total json) fname
+                  | Left err => pure (Left err)
+    pure (Right doc)
+
 
 -- --------------------------------------------------------------------- [ EOF ]
