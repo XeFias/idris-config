@@ -18,7 +18,7 @@ import public Data.AVL.Dict
 
 import public Config.Error
 
-%default partial
+%default covering
 %access private
 
 -- ------------------------------------------------------------------- [ Model ]
@@ -78,8 +78,11 @@ jsonNull = do
 
 mutual
   jsonArray : Rule (List JsonValue)
-  jsonArray = brackets (commaSep1 jsonValue)
-          <|> (do emptyArray; pure Nil)
+  jsonArray = brackets $ do
+      v <- jsonValue
+      comma
+      vs <- commaSep jsonValue
+      pure (v::vs)
 
   keyValuePair : Rule (String, JsonValue)
   keyValuePair = do
@@ -94,18 +97,18 @@ mutual
            <|> (do emptyMap; pure empty)
 
   jsonValue : Rule JsonValue
-  jsonValue =  jsonString
-           <|> jsonNumber
-           <|> jsonBool
-           <|> jsonNull
+  jsonValue =  (do str <- quoted; pure (JsonString str))
+           <|> (do dbl <- double; pure (JsonNumber dbl))
+           <|> ((do reserved "true";  pure $ JsonBool True)
+         <|> (do reserved "false"; pure $ JsonBool False))
+           <|> (do reserved "null"; pure JsonNull)
            <|> (do arr <- jsonArray;  pure $ JsonArray arr)
            <|> (do obj <- jsonObject; pure $ JsonObject obj)
 
 
 export
 json : Rule JsonValue
-json = (do arr <- jsonArray;  pure $ JsonArray arr)
-   <|> (do obj <- jsonObject; pure $ JsonObject obj)
+json = do obj <- jsonObject; pure $ JsonObject obj
 
 export
 parseJSON : String -> Rule ty -> Either ConfigError ty
@@ -121,14 +124,14 @@ toString doc = show doc
 export
 fromString : String -> Either ConfigError JsonValue
 fromString str =
-    case parse jsonTokMap (Just $ stripWhiteSpace) str (assert_total json) of
+    case parse jsonTokMap (Just $ stripWhiteSpace) str json of
       Left err  => Left err
       Right doc => Right doc
 
 export
 fromFile : String -> IO $ Either ConfigError JsonValue
 fromFile fname = do
-    Right doc <- readConfigFile jsonTokMap (Just $ stripWhiteSpace) (assert_total json) fname
+    Right doc <- readConfigFile jsonTokMap (Just $ stripWhiteSpace) (json) fname
                   | Left err => pure (Left err)
     pure (Right doc)
 
